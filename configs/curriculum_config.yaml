@@ -1,0 +1,59 @@
+# Curriculum Learning Configuration
+curriculum:
+  enabled: true
+  promotion_threshold: 0.3    # was 0.75 — impossible with zero deliveries
+  evaluation_window: 10       # was 20 — faster feedback
+
+  stages:
+    - stage: 1
+      name: "Basics"
+      num_robots: 10
+      obstacle_density: 0.0
+      orders_per_episode: 10
+      order_deadlines: false
+      dynamic_obstacles: false
+      battery_management: false
+      description: "5 robots, empty grid, simple orders"
+
+    - stage: 2
+      name: "Obstacles"
+      num_robots: 8
+      obstacle_density: 0.05
+      orders_per_episode: 10
+      order_deadlines: false
+      dynamic_obstacles: false
+      battery_management: false
+      description: "8 robots, sparse obstacles"
+
+    - stage: 3
+      name: "Battery & Density"
+      num_robots: 12
+      obstacle_density: 0.1
+      orders_per_episode: 20
+      order_deadlines: false
+      dynamic_obstacles: false
+      battery_management: true
+      description: "12 robots, battery management required"
+
+    - stage: 4
+      name: "Deadlines"
+      num_robots: 16
+      obstacle_density: 0.12
+      orders_per_episode: 25
+      order_deadlines: true
+      deadline_range: [50, 200]
+      dynamic_obstacles: true
+      battery_management: true
+      description: "16 robots, deadlines and moving obstacles"
+
+    - stage: 5
+      name: "Full Complexity"
+      num_robots: 20
+      obstacle_density: 0.15
+      orders_per_episode: 30
+      order_deadlines: true
+      deadline_range: [30, 150]
+      dynamic_obstacles: true
+      battery_management: true
+      priority_orders: true
+      description: "20 robots, full warehouse complexity"

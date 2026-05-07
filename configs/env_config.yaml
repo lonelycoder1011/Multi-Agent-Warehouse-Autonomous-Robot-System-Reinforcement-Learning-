@@ -1,0 +1,30 @@
+# Warehouse Environment Configuration
+grid:
+  width: 20
+  height: 20
+  obstacle_density: 0.15
+  num_shelves: 30
+  num_charging_stations: 4
+  num_delivery_zones: 3
+
+robots:
+  num_robots: 10
+  max_battery: 100
+  battery_drain_per_step: 0.5
+  battery_charge_rate: 5.0
+  observation_radius: 5
+  max_steps_per_episode: 500
+
+orders:
+  max_queue_size: 20
+  order_spawn_rate: 0.1       # probability per step
+  order_deadline_steps: 100
+  priority_levels: 3
+
+rewards:
+  delivery_reward: 100.0        # was 10.0 — must dwarf all step rewards
+  collision_penalty: -2.0       # was -5.0 — reduce so it doesn't dominate learning signal  
+  energy_waste_penalty: -0.1
+  delay_penalty: -1.0
+  idle_penalty: -0.5            # was -0.05 — stronger push to seek orders
+  charge_reward: 0.5

@@ -1,0 +1,31 @@
+# Training Configuration
+training:
+  algorithm: "MAPPO"
+  num_iterations: 1000
+  checkpoint_freq: 50
+  eval_freq: 25
+  seed: 42
+
+rollout:
+  num_workers: 4
+  num_envs_per_worker: 2
+  rollout_fragment_length: 200
+  batch_size: 4000
+  mini_batch_size: 512
+
+optimization:
+  lr: 3.0e-4
+  lr_schedule: "cosine"
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_param: 0.2
+  entropy_coeff: 0.01
+  vf_loss_coeff: 0.5
+  max_grad_norm: 0.5
+  num_sgd_iter: 10
+
+logging:
+  wandb_project: "warehouse-rl"
+  wandb_entity: null
+  log_level: "INFO"
+  save_dir: "./checkpoints"

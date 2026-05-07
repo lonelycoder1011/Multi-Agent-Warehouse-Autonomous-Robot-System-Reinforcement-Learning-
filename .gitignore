@@ -1,0 +1,81 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tmp/
+tmp/
+temp/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+rl-env/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+credentials*.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+secrets.yaml
+secrets.yml
+
+# Packaging and build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# RL, ML, and experiment outputs
+models/
+checkpoints/
+logs/
+wandb/
+ray_results/
+runs/
+tensorboard/
+mlruns/
+eval_results.json
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.pickle
+
+# Dashboard/runtime generated files
+dashboard/static/
+*.log
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Accidental PowerShell brace-expansion folders
+/{src*/
+/{docs,src*/

@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warehouse RL — Autonomous Control Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;600&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg0: #010a14;
+  --bg1: #020d1c;
+  --bg2: #071828;
+  --cyan: #00e5ff;
+  --cyan2: #00b8d4;
+  --violet: #7c3aed;
+  --violet2: #a855f7;
+  --amber: #f59e0b;
+  --green: #10b981;
+  --red: #ef4444;
+  --pink: #ec4899;
+  --text: #cce8f4;
+  --text2: #6b9ab8;
+  --glass: rgba(0, 229, 255, 0.04);
+  --glass-b: rgba(0, 229, 255, 0.12);
+  --glass-h: rgba(0, 229, 255, 0.08);
+  --glow: 0 0 30px rgba(0,229,255,0.25), 0 0 60px rgba(0,229,255,0.1);
+  --glow-v: 0 0 30px rgba(124,58,237,0.35), 0 0 60px rgba(124,58,237,0.15);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg0);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Animated Background ── */
+.bg-mesh {
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(ellipse 90% 60% at 15% 5%, rgba(0,229,255,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 70% at 85% 90%, rgba(124,58,237,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(16,185,129,0.03) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 75% 15%, rgba(245,158,11,0.04) 0%, transparent 50%);
+  animation: meshPulse 8s ease-in-out infinite alternate;
+}
+@keyframes meshPulse {
+  0% { opacity:0.8; }
+  100% { opacity:1.2; }
+}
+
+.grid-bg {
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ── Layout ── */
+.app {
+  position:relative; z-index:1;
+  display:grid;
+  grid-template-rows: 60px 1fr;
+  grid-template-columns: 280px 1fr 280px;
+  height: 100vh;
+  gap: 0;
+}
+
+/* ── Header ── */
+header {
+  grid-column: 1/-1;
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 0 24px;
+  background: rgba(1,10,20,0.9);
+  border-bottom: 1px solid var(--glass-b);
+  backdrop-filter: blur(20px);
+}
+
+.brand {
+  display:flex; align-items:center; gap:12px;
+}
+.brand-icon {
+  width:32px; height:32px;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  animation: spin 10s linear infinite;
+}
+@keyframes spin { 100% { transform:rotate(360deg); } }
+
+.brand-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 14px; font-weight:700;
+  letter-spacing: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--violet2));
+  -webkit-background-clip: text; -webkit-text-fill-color:transparent;
+}
+
+.header-stats {
+  display:flex; gap:24px; align-items:center;
+}
+
+.hstat {
+  display:flex; flex-direction:column; align-items:center;
+}
+.hstat-label {
+  font-size:9px; letter-spacing:2px; color:var(--text2); text-transform:uppercase;
+}
+.hstat-value {
+  font-family:'Orbitron',monospace; font-size:14px; font-weight:700; color:var(--cyan);
+}
+
+.status-dot {
+  width:8px; height:8px; border-radius:50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink {
+  0%,100% { opacity:1; }
+  50% { opacity:0.3; }
+}
+
+.status-badge {
+  display:flex; align-items:center; gap:8px;
+  padding:4px 12px;
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.3);
+  border-radius:20px;
+  font-size:11px; letter-spacing:2px; color:var(--green);
+  font-family:'JetBrains Mono',monospace;
+}
+
+/* ── Panels ── */
+.panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-b);
+  backdrop-filter: blur(24px);
+  border-radius: 0;
+  overflow: hidden;
+  position:relative;
+}
+
+.panel::before {
+  content:'';
+  position:absolute; top:0; left:0; right:0;
+  height:1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  opacity:0.6;
+}
+
+.panel-title {
+  font-family:'Orbitron',monospace;
+  font-size:9px; font-weight:700; letter-spacing:3px;
+  color:var(--text2); text-transform:uppercase;
+  padding:14px 16px 8px;
+  display:flex; align-items:center; gap:8px;
+}
+.panel-title::before {
+  content:'';
+  width:3px; height:12px;
+  background: linear-gradient(to bottom, var(--cyan), var(--violet));
+  border-radius:2px;
+}
+
+/* ── Left Sidebar ── */
+.sidebar-left {
+  border-right: 1px solid var(--glass-b);
+  display:flex; flex-direction:column;
+  overflow-y:auto;
+}
+
+.sidebar-left::-webkit-scrollbar { width:3px; }
+.sidebar-left::-webkit-scrollbar-track { background:transparent; }
+.sidebar-left::-webkit-scrollbar-thumb { background:var(--cyan2); border-radius:2px; }
+
+/* ── Metric Cards ── */
+.metric-grid {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:8px; padding:8px 12px;
+}
+
+.metric-card {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--glass-b);
+  border-radius:8px;
+  padding:10px 10px;
+  position:relative;
+  overflow:hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.metric-card:hover {
+  border-color: rgba(0,229,255,0.4);
+  box-shadow: var(--glow);
+}
+.metric-card::after {
+  content:'';
+  position:absolute; bottom:0; left:0; right:0;
+  height:2px;
+  background: var(--m-color, var(--cyan));
+  opacity:0.6;
+}
+
+.metric-label {
+  font-size:8px; letter-spacing:2px; color:var(--text2); text-transform:uppercase;
+  margin-bottom:6px;
+  font-family:'JetBrains Mono',monospace;
+}
+.metric-value {
+  font-family:'Orbitron',monospace;
+  font-size:20px; font-weight:900;
+  color: var(--m-color, var(--cyan));
+  line-height:1;
+  text-shadow: 0 0 20px var(--m-color, var(--cyan));
+}
+.metric-sub {
+  font-size:9px; color:var(--text2); margin-top:3px;
+  font-family:'JetBrains Mono',monospace;
+}
+.metric-delta {
+  font-size:10px; font-weight:600;
+  color:var(--green);
+  position:absolute; top:8px; right:8px;
+}
+
+/* ── Robot Status List ── */
+.robot-list {
+  padding:4px 12px;
+  display:flex; flex-direction:column; gap:4px;
+}
+
+.robot-row {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 10px;
+  background:rgba(0,0,0,0.3);
+  border-radius:6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  cursor:default;
+}
+.robot-row:hover {
+  border-color: var(--glass-b);
+  background:rgba(0,229,255,0.04);
+}
+
+.robot-id {
+  font-family:'Orbitron',monospace;
+  font-size:10px; font-weight:700; color:var(--cyan);
+  width:24px; flex-shrink:0;
+}
+
+.robot-state-badge {
+  font-family:'JetBrains Mono',monospace;
+  font-size:8px; letter-spacing:1px;
+  padding:2px 6px; border-radius:3px;
+  flex-shrink:0;
+  min-width:68px; text-align:center;
+}
+.state-IDLE     { background:rgba(107,154,184,0.15); color:#6b9ab8; }
+.state-MOVING   { background:rgba(0,229,255,0.15); color:var(--cyan); }
+.state-PICKING  { background:rgba(245,158,11,0.15); color:var(--amber); }
+.state-DELIVERING { background:rgba(16,185,129,0.15); color:var(--green); }
+.state-CHARGING { background:rgba(124,58,237,0.15); color:var(--violet2); }
+
+.battery-bar-wrap {
+  flex:1; height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;
+}
+.battery-bar-fill {
+  height:100%; border-radius:2px;
+  transition: width 0.5s ease;
+}
+
+.battery-val {
+  font-family:'JetBrains Mono',monospace;
+  font-size:9px; color:var(--text2); width:28px; text-align:right; flex-shrink:0;
+}
+
+/* ── Center: Warehouse Grid ── */
+.center {
+  display:flex; flex-direction:column;
+  border-right:1px solid var(--glass-b);
+}
+
+.canvas-wrap {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  padding:16px;
+  position:relative;
+}
+
+#warehouseCanvas {
+  border: 1px solid var(--glass-b);
+  border-radius:8px;
+  box-shadow: var(--glow);
+  cursor:crosshair;
+}
+
+.canvas-corner {
+  position:absolute;
+  width:16px; height:16px;
+  border-color: var(--cyan);
+  border-style:solid;
+  opacity:0.6;
+}
+.canvas-corner.tl { top:10px; left:10px; border-width:2px 0 0 2px; }
+.canvas-corner.tr { top:10px; right:10px; border-width:2px 2px 0 0; }
+.canvas-corner.bl { bottom:10px; left:10px; border-width:0 0 2px 2px; }
+.canvas-corner.br { bottom:10px; right:10px; border-width:0 2px 2px 0; }
+
+/* Progress/timeline bar */
+.timeline {
+  padding:8px 16px 12px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.timeline-label {
+  display:flex; justify-content:space-between;
+  font-size:9px; color:var(--text2); letter-spacing:1px; text-transform:uppercase;
+  font-family:'JetBrains Mono',monospace;
+}
+.timeline-bar {
+  height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;
+}
+.timeline-fill {
+  height:100%;
+  background: linear-gradient(90deg, var(--violet), var(--cyan));
+  border-radius:2px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(0,229,255,0.5);
+}
+
+/* ── Right Sidebar ── */
+.sidebar-right {
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+
+/* ── Charts ── */
+.chart-container {
+  padding:0 12px 8px;
+  flex:1; min-height:0;
+}
+
+canvas.mini-chart {
+  width:100% !important;
+}
+
+.chart-wrap {
+  background:rgba(0,0,0,0.3);
+  border:1px solid var(--glass-b);
+  border-radius:8px;
+  padding:10px;
+  margin-bottom:8px;
+}
+
+/* ── Legend ── */
+.legend {
+  display:flex; gap:12px; padding:4px 12px;
+  flex-wrap:wrap;
+}
+.legend-item {
+  display:flex; align-items:center; gap:5px;
+  font-size:9px; color:var(--text2); text-transform:uppercase; letter-spacing:1px;
+  font-family:'JetBrains Mono',monospace;
+}
+.legend-dot {
+  width:8px; height:8px; border-radius:2px;
+}
+
+/* ── Heatmap overlay toggle ── */
+.toggle-btn {
+  background: rgba(0,229,255,0.08);
+  border: 1px solid var(--glass-b);
+  border-radius:6px;
+  padding:4px 10px;
+  font-size:9px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--text2);
+  cursor:pointer;
+  transition: all 0.2s;
+  font-family:'JetBrains Mono',monospace;
+}
+.toggle-btn:hover, .toggle-btn.active {
+  background: rgba(0,229,255,0.15);
+  border-color:var(--cyan);
+  color:var(--cyan);
+  box-shadow: 0 0 10px rgba(0,229,255,0.2);
+}
+
+.controls-row {
+  display:flex; gap:6px; padding:4px 12px 8px;
+}
+
+/* ── Scrollbar global ── */
+::-webkit-scrollbar { width:3px; height:3px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(0,229,255,0.3); border-radius:2px; }
+
+/* ── Liquid Scan Line ── */
+.scan-line {
+  position:absolute; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.6), transparent);
+  animation: scanDown 4s linear infinite;
+  pointer-events:none;
+  z-index:10;
+}
+@keyframes scanDown {
+  0% { top:-2px; opacity:0; }
+  5% { opacity:1; }
+  95% { opacity:1; }
+  100% { top:100%; opacity:0; }
+}
+
+/* ── Order Activity Log ── */
+.log-wrap {
+  padding:4px 12px 8px;
+  display:flex; flex-direction:column; gap:2px;
+  max-height:120px; overflow-y:auto;
+}
+.log-entry {
+  font-family:'JetBrains Mono',monospace;
+  font-size:9px; color:var(--text2);
+  padding:3px 8px;
+  background:rgba(0,0,0,0.2);
+  border-radius:3px;
+  border-left:2px solid var(--glass-b);
+  animation: fadeIn 0.4s ease;
+}
+.log-entry.delivery { border-left-color:var(--green); color:var(--green); }
+.log-entry.collision { border-left-color:var(--red); color:var(--red); }
+.log-entry.charge { border-left-color:var(--violet2); color:var(--violet2); }
+@keyframes fadeIn { from { opacity:0; transform:translateX(-4px); } to { opacity:1; transform:none; } }
+
+/* ── Floating particles ── */
+.particle {
+  position:fixed;
+  border-radius:50%;
+  pointer-events:none;
+  animation: float linear infinite;
+}
+@keyframes float {
+  0% { transform:translateY(100vh) scale(1); opacity:0; }
+  10% { opacity:0.6; }
+  90% { opacity:0.4; }
+  100% { transform:translateY(-20px) scale(0.5); opacity:0; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+<div class="grid-bg"></div>
+
+<!-- Floating particles -->
+<div id="particles"></div>
+
+<div class="app">
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon"></div>
+      <span class="brand-name">WAREHOUSE · RL</span>
+    </div>
+
+    <div class="header-stats">
+      <div class="hstat">
+        <span class="hstat-label">Episode</span>
+        <span class="hstat-value" id="h-episode">001</span>
+      </div>
+      <div class="hstat">
+        <span class="hstat-label">Step</span>
+        <span class="hstat-value" id="h-step">0000</span>
+      </div>
+      <div class="hstat">
+        <span class="hstat-label">Reward</span>
+        <span class="hstat-value" id="h-reward">0.00</span>
+      </div>
+      <div class="hstat">
+        <span class="hstat-label">Algorithm</span>
+        <span class="hstat-value" style="color:var(--violet2)">MAPPO</span>
+      </div>
+    </div>
+
+    <div class="status-badge">
+      <div class="status-dot"></div>
+      LIVE · 10 AGENTS
+    </div>
+  </header>
+
+  <!-- ── LEFT SIDEBAR ── -->
+  <aside class="sidebar-left panel">
+    <div class="scan-line"></div>
+    <div class="panel-title">System Metrics</div>
+
+    <div class="metric-grid">
+      <div class="metric-card" style="--m-color:var(--green)">
+        <div class="metric-label">Delivered</div>
+        <div class="metric-value" id="m-delivered">0</div>
+        <div class="metric-sub">orders</div>
+        <div class="metric-delta" id="m-delivered-d">+0</div>
+      </div>
+      <div class="metric-card" style="--m-color:var(--cyan)">
+        <div class="metric-label">Throughput</div>
+        <div class="metric-value" id="m-throughput">0.0</div>
+        <div class="metric-sub">orders/100</div>
+      </div>
+      <div class="metric-card" style="--m-color:var(--amber)">
+        <div class="metric-label">Avg Battery</div>
+        <div class="metric-value" id="m-battery">100</div>
+        <div class="metric-sub">% charge</div>
+      </div>
+      <div class="metric-card" style="--m-color:var(--red)">
+        <div class="metric-label">Collisions</div>
+        <div class="metric-value" id="m-collisions">0</div>
+        <div class="metric-sub">total</div>
+      </div>
+      <div class="metric-card" style="--m-color:var(--violet2); grid-column:1/-1">
+        <div class="metric-label">Completion Rate</div>
+        <div class="metric-value" id="m-rate">0.0%</div>
+        <div class="metric-sub">orders fulfilled / spawned</div>
+      </div>
+    </div>
+
+    <div class="panel-title">Agent Status</div>
+    <div class="robot-list" id="robot-list"></div>
+
+    <div class="panel-title">Activity Log</div>
+    <div class="log-wrap" id="activity-log"></div>
+  </aside>
+
+  <!-- ── CENTER: WAREHOUSE CANVAS ── -->
+  <main class="center panel">
+    <div class="panel-title">
+      Warehouse Grid — Live Simulation
+      <div style="margin-left:auto; display:flex; gap:6px;">
+        <button class="toggle-btn" id="btn-heatmap" onclick="toggleHeatmap()">Heatmap</button>
+        <button class="toggle-btn active" id="btn-paths" onclick="togglePaths()">Paths</button>
+      </div>
+    </div>
+
+    <div class="canvas-wrap" id="canvas-wrap">
+      <div class="canvas-corner tl"></div>
+      <div class="canvas-corner tr"></div>
+      <div class="canvas-corner bl"></div>
+      <div class="canvas-corner br"></div>
+      <canvas id="warehouseCanvas"></canvas>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#1a3a5c"></div>Empty</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2d1b69"></div>Shelf</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a4d2e"></div>Delivery</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3d2200"></div>Charging</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a1414"></div>Obstacle</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div>Robot</div>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-label">
+        <span>Episode Progress</span>
+        <span id="tl-pct">0%</span>
+      </div>
+      <div class="timeline-bar"><div class="timeline-fill" id="tl-fill" style="width:0%"></div></div>
+    </div>
+  </main>
+
+  <!-- ── RIGHT SIDEBAR ── -->
+  <aside class="sidebar-right panel">
+    <div class="panel-title">Training Curves</div>
+
+    <div class="chart-container">
+      <div class="chart-wrap">
+        <div style="font-size:9px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-family:'JetBrains Mono',monospace;">
+          ▸ Cumulative Reward
+        </div>
+        <canvas id="chart-reward" class="mini-chart" height="70"></canvas>
+      </div>
+
+      <div class="chart-wrap">
+        <div style="font-size:9px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-family:'JetBrains Mono',monospace;">
+          ▸ Throughput / 100 Steps
+        </div>
+        <canvas id="chart-throughput" class="mini-chart" height="70"></canvas>
+      </div>
+
+      <div class="chart-wrap">
+        <div style="font-size:9px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-family:'JetBrains Mono',monospace;">
+          ▸ Fleet Battery Average
+        </div>
+        <canvas id="chart-battery" class="mini-chart" height="70"></canvas>
+      </div>
+    </div>
+
+    <div class="panel-title">Comparison — Algorithms</div>
+    <div style="padding:4px 12px 12px;">
+      <div id="algo-bars"></div>
+    </div>
+  </aside>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const CELL = 22;
+const GRID_W = 20, GRID_H = 20;
+const MAX_HISTORY = 60;
+
+// ── State ─────────────────────────────────────────────────────────────────
+let showHeatmap = false;
+let showPaths = true;
+let heatmap = Array.from({length:GRID_H}, () => new Float32Array(GRID_W));
+let robotTrails = {};
+let lastDelivered = 0;
+let logEntries = [];
+
+// ── Canvas Setup ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('warehouseCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = GRID_W * CELL;
+canvas.height = GRID_H * CELL;
+
+// ── Cell Colors ──────────────────────────────────────────────────────────
+const CELL_COLORS = {
+  0: '#0a1a2e',        // empty
+  1: '#1a0a0a',        // obstacle
+  2: '#0d1440',        // shelf
+  3: '#1a0d00',        // charging
+  4: '#091a0e',        // delivery
+  5: '#00e5ff',        // robot (not used here)
+};
+const CELL_ACCENT = {
+  2: 'rgba(124,58,237,0.4)',
+  3: 'rgba(245,158,11,0.5)',
+  4: 'rgba(16,185,129,0.5)',
+  1: 'rgba(239,68,68,0.3)',
+};
+
+// ── Robot Colors by State ─────────────────────────────────────────────────
+const STATE_COLORS = {
+  IDLE:       '#4a7fa0',
+  MOVING:     '#00e5ff',
+  PICKING:    '#f59e0b',
+  DELIVERING: '#10b981',
+  CHARGING:   '#a855f7',
+};
+
+// ── Render ────────────────────────────────────────────────────────────────
+function renderGrid(grid, robots) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Cells
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const cell = grid[y][x];
+      const px = x * CELL, py = y * CELL;
+
+      ctx.fillStyle = CELL_COLORS[cell] || CELL_COLORS[0];
+      ctx.fillRect(px, py, CELL, CELL);
+
+      if (CELL_ACCENT[cell]) {
+        ctx.fillStyle = CELL_ACCENT[cell];
+        ctx.fillRect(px+1, py+1, CELL-2, CELL-2);
+      }
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0,229,255,0.05)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(px, py, CELL, CELL);
+    }
+  }
+
+  // Heatmap overlay
+  if (showHeatmap) {
+    let maxH = 1;
+    for (let y=0;y<GRID_H;y++) for (let x=0;x<GRID_W;x++) maxH=Math.max(maxH,heatmap[y][x]);
+    for (let y=0;y<GRID_H;y++) {
+      for (let x=0;x<GRID_W;x++) {
+        const v = heatmap[y][x] / maxH;
+        if (v > 0.01) {
+          ctx.fillStyle = `rgba(0,229,255,${v * 0.4})`;
+          ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+        }
+      }
+    }
+  }
+
+  // Robot trails
+  if (showPaths) {
+    for (const [rid, trail] of Object.entries(robotTrails)) {
+      if (trail.length < 2) continue;
+      const color = STATE_COLORS[trail[trail.length-1]?.state || 'MOVING'];
+      ctx.beginPath();
+      ctx.strokeStyle = color.replace(')', ', 0.3)').replace('rgb','rgba').replace('#', '').length > 6
+        ? color + '50' : color + '50';
+      ctx.strokeStyle = hexToRgba(color, 0.25);
+      ctx.lineWidth = 1;
+      ctx.moveTo(trail[0].x * CELL + CELL/2, trail[0].y * CELL + CELL/2);
+      for (let i=1; i<trail.length; i++) {
+        ctx.lineTo(trail[i].x * CELL + CELL/2, trail[i].y * CELL + CELL/2);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Robots
+  for (const r of robots) {
+    const px = r.x * CELL + CELL/2;
+    const py = r.y * CELL + CELL/2;
+    const color = STATE_COLORS[r.state] || STATE_COLORS.IDLE;
+    const radius = CELL * 0.38;
+
+    // Glow
+    const grd = ctx.createRadialGradient(px,py,0,px,py,radius*2.5);
+    grd.addColorStop(0, hexToRgba(color, 0.35));
+    grd.addColorStop(1, hexToRgba(color, 0));
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(px,py,radius*2.5,0,Math.PI*2);
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Robot ID
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${CELL*0.35}px "Orbitron"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(r.id, px, py);
+
+    // Battery indicator arc
+    const battFrac = r.battery / 100;
+    ctx.beginPath();
+    ctx.arc(px, py, radius+3, -Math.PI/2, -Math.PI/2 + Math.PI*2*battFrac);
+    const battColor = battFrac > 0.5 ? '#10b981' : battFrac > 0.2 ? '#f59e0b' : '#ef4444';
+    ctx.strokeStyle = battColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Update heatmap
+    if (r.x>=0&&r.x<GRID_W&&r.y>=0&&r.y<GRID_H) {
+      heatmap[r.y][r.x] += 0.5;
+    }
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  if (hex.startsWith('#')) {
+    const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  // named css color fallback
+  return hex.replace(')', `, ${alpha})`).replace('rgb(','rgba(');
+}
+
+// ── Charts Setup ──────────────────────────────────────────────────────────
+function makeChart(id, color, label) {
+  const ctx2 = document.getElementById(id).getContext('2d');
+  return new Chart(ctx2, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color.replace(')', ', 0.08)').replace('rgb','rgba'),
+        borderWidth: 1.5,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive:true,
+      animation:{ duration:0 },
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ display:false },
+        y:{
+          display:true,
+          grid:{ color:'rgba(255,255,255,0.04)', drawBorder:false },
+          ticks:{ color:'rgba(204,232,244,0.4)', font:{ size:8, family:'JetBrains Mono' }, maxTicksLimit:4 },
+        }
+      },
+      interaction:{ mode:'nearest', intersect:false },
+    }
+  });
+}
+
+const chartReward = makeChart('chart-reward', '#a855f7', 'Reward');
+const chartThroughput = makeChart('chart-throughput', '#00e5ff', 'Throughput');
+const chartBattery = makeChart('chart-battery', '#f59e0b', 'Battery %');
+
+function updateChart(chart, newData) {
+  const labels = newData.map((_,i) => i);
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = newData;
+  chart.update('none');
+}
+
+// ── Algorithm Comparison Bars ─────────────────────────────────────────────
+const ALGO_DATA = {
+  'MAPPO (Ours)':    { score: 0, color: 'var(--cyan)', target: 87 },
+  'Comm-MAPPO':      { score: 0, color: 'var(--violet2)', target: 92 },
+  'Independent PPO': { score: 0, color: 'var(--amber)', target: 61 },
+  'Random Policy':   { score: 0, color: 'var(--red)', target: 18 },
+};
+let algoAnimFrame = 0;
+
+function renderAlgoBars() {
+  const el = document.getElementById('algo-bars');
+  el.innerHTML = Object.entries(ALGO_DATA).map(([name, d]) => `
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+        <span style="font-size:9px;color:var(--text2);font-family:'JetBrains Mono',monospace;letter-spacing:1px;">${name}</span>
+        <span style="font-size:9px;font-family:'Orbitron',monospace;color:${d.color};">${Math.round(d.score)}%</span>
+      </div>
+      <div style="height:5px;background:rgba(255,255,255,0.04);border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${d.score}%;background:${d.color};border-radius:3px;box-shadow:0 0 6px ${d.color};transition:width 0.5s ease;"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function animateAlgoBars() {
+  algoAnimFrame++;
+  if (algoAnimFrame % 3 === 0) {
+    for (const d of Object.values(ALGO_DATA)) {
+      if (d.score < d.target) d.score = Math.min(d.target, d.score + 0.8);
+    }
+    renderAlgoBars();
+  }
+}
+
+// ── Robot List UI ─────────────────────────────────────────────────────────
+function updateRobotList(robots) {
+  const el = document.getElementById('robot-list');
+  el.innerHTML = robots.map(r => {
+    const battFrac = r.battery / 100;
+    const battColor = battFrac > 0.5 ? '#10b981' : battFrac > 0.2 ? '#f59e0b' : '#ef4444';
+    return `
+    <div class="robot-row">
+      <span class="robot-id">R${r.id.toString().padStart(2,'0')}</span>
+      <span class="robot-state-badge state-${r.state}">${r.state}</span>
+      <div class="battery-bar-wrap">
+        <div class="battery-bar-fill" style="width:${r.battery.toFixed(0)}%;background:${battColor};box-shadow:0 0 4px ${battColor};"></div>
+      </div>
+      <span class="battery-val">${r.battery.toFixed(0)}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Activity Log ──────────────────────────────────────────────────────────
+function addLog(msg, type='') {
+  const el = document.getElementById('activity-log');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.textContent = msg;
+  el.insertBefore(entry, el.firstChild);
+  while (el.children.length > 12) el.removeChild(el.lastChild);
+}
+
+// ── Trail Tracking ────────────────────────────────────────────────────────
+function updateTrails(robots) {
+  for (const r of robots) {
+    if (!robotTrails[r.id]) robotTrails[r.id] = [];
+    const trail = robotTrails[r.id];
+    trail.push({ x:r.x, y:r.y, state:r.state });
+    if (trail.length > 20) trail.shift();
+  }
+}
+
+// ── Main State Update ─────────────────────────────────────────────────────
+function onState(data) {
+  const { step, episode, grid, robots, metrics, history } = data;
+
+  // Header
+  document.getElementById('h-episode').textContent = String(episode).padStart(3,'0');
+  document.getElementById('h-step').textContent = String(step).padStart(4,'0');
+  document.getElementById('h-reward').textContent = metrics.episode_reward.toFixed(1);
+
+  // Metrics
+  const newDelivered = metrics.orders_completed;
+  const delta = newDelivered - lastDelivered;
+  if (delta > 0) {
+    document.getElementById('m-delivered-d').textContent = `+${delta}`;
+    addLog(`✓ Robot delivered order #${newDelivered} at step ${step}`, 'delivery');
+    lastDelivered = newDelivered;
+  }
+  document.getElementById('m-delivered').textContent = newDelivered;
+  document.getElementById('m-throughput').textContent = metrics.throughput.toFixed(1);
+  document.getElementById('m-battery').textContent = Math.round(metrics.avg_battery);
+  document.getElementById('m-collisions').textContent = metrics.total_collisions;
+  document.getElementById('m-rate').textContent = (metrics.completion_rate * 100).toFixed(1) + '%';
+
+  // Timeline
+  const pct = Math.min(100, (step / 500) * 100).toFixed(0);
+  document.getElementById('tl-pct').textContent = pct + '%';
+  document.getElementById('tl-fill').style.width = pct + '%';
+
+  // Render
+  updateTrails(robots);
+  renderGrid(grid, robots);
+  updateRobotList(robots);
+  updateChart(chartReward, history.reward);
+  updateChart(chartThroughput, history.throughput);
+  updateChart(chartBattery, history.battery);
+  animateAlgoBars();
+
+  // Occasional log events
+  if (step % 20 === 0) {
+    const charging = robots.filter(r=>r.state==='CHARGING');
+    if (charging.length > 0) {
+      addLog(`⚡ ${charging.length} robot(s) charging at step ${step}`, 'charge');
+    }
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = e => {
+    try { onState(JSON.parse(e.data)); } catch(err) { console.error(err); }
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+  ws.onerror = () => ws.close();
+}
+
+// ── Toggles ───────────────────────────────────────────────────────────────
+function toggleHeatmap() {
+  showHeatmap = !showHeatmap;
+  document.getElementById('btn-heatmap').classList.toggle('active', showHeatmap);
+}
+function togglePaths() {
+  showPaths = !showPaths;
+  document.getElementById('btn-paths').classList.toggle('active', showPaths);
+}
+
+// ── Particles ─────────────────────────────────────────────────────────────
+function spawnParticles() {
+  const container = document.getElementById('particles');
+  for (let i=0; i<20; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const size = Math.random()*3+1;
+    const colors = ['#00e5ff','#a855f7','#10b981','#f59e0b'];
+    p.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      opacity:${Math.random()*0.6+0.2};
+      animation-duration:${Math.random()*15+10}s;
+      animation-delay:${Math.random()*10}s;
+    `;
+    container.appendChild(p);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+renderAlgoBars();
+spawnParticles();
+addLog('🏭 System initialized — MAPPO agents online', '');
+addLog('📡 WebSocket connection establishing...', '');
+connect();
+</script>
+</body>
+</html>

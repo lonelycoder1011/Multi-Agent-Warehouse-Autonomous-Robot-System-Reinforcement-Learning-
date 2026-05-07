@@ -1,0 +1,34 @@
+# ── Stage 1: Builder ──────────────────────────────────────────────────────
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y python3.10 python3.10-dev python3-pip git curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    RAY_DISABLE_MEMORY_MONITOR=1 WANDB_MODE=offline
+
+RUN apt-get update && apt-get install -y python3.10 python3-pip && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+WORKDIR /app
+COPY src/ ./src/
+COPY configs/ ./configs/
+COPY setup.py .
+
+RUN pip install --no-cache-dir -e . --no-deps
+
+# Health check for Ray head node
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
+  CMD python3 -c "import ray; ray.init(address='auto'); print('Ray OK')" || exit 1
+
+EXPOSE 6379 8265 10001
+CMD ["python3", "-m", "training.trainer", "--config", "configs/training_config.yaml"]

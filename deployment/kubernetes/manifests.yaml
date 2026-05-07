@@ -1,0 +1,282 @@
+---
+# namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: warehouse-rl
+  labels:
+    app: warehouse-rl
+    environment: production
+
+---
+# training-deployment.yaml — Ray Head Node
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-head
+  namespace: warehouse-rl
+  labels:
+    app: ray-head
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ray-head
+  template:
+    metadata:
+      labels:
+        app: ray-head
+    spec:
+      containers:
+        - name: ray-head
+          image: warehouse-rl-training:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379   # Ray GCS
+            - containerPort: 8265   # Ray Dashboard
+            - containerPort: 10001  # Ray Client
+          env:
+            - name: RAY_HEAD
+              value: "true"
+            - name: REDIS_HOST
+              value: "redis-service"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: warehouse-secrets
+                  key: wandb-api-key
+                  optional: true
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /workspace/models
+            - name: log-storage
+              mountPath: /workspace/logs
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: model-pvc
+        - name: log-storage
+          persistentVolumeClaim:
+            claimName: log-pvc
+
+---
+# Ray Workers
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-workers
+  namespace: warehouse-rl
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ray-worker
+  template:
+    metadata:
+      labels:
+        app: ray-worker
+    spec:
+      containers:
+        - name: ray-worker
+          image: warehouse-rl-training:latest
+          command: ["bash", "-c", "ray start --address=ray-head-service:6379 && sleep infinity"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+
+---
+# HPA for Ray Workers
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ray-workers-hpa
+  namespace: warehouse-rl
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ray-workers
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-head-service
+  namespace: warehouse-rl
+spec:
+  selector:
+    app: ray-head
+  ports:
+    - name: gcs
+      port: 6379
+    - name: dashboard
+      port: 8265
+    - name: client
+      port: 10001
+
+---
+# Dashboard Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: warehouse-rl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: warehouse-rl-dashboard:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: REDIS_HOST
+              value: "redis-service"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-service
+  namespace: warehouse-rl
+spec:
+  selector:
+    app: dashboard
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+
+---
+# Redis
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: warehouse-rl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          command: ["redis-server", "--appendonly", "yes"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: warehouse-rl
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: warehouse-ingress
+  namespace: warehouse-rl
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+    - host: warehouse-rl.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard-service
+                port:
+                  number: 80
+          - path: /ray
+            pathType: Prefix
+            backend:
+              service:
+                name: ray-head-service
+                port:
+                  number: 8265
+
+---
+# PVCs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-pvc
+  namespace: warehouse-rl
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: log-pvc
+  namespace: warehouse-rl
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 5Gi

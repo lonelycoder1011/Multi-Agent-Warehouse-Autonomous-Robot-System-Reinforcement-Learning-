@@ -1,0 +1,71 @@
+name: 🚀 Build & Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push training image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.training
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-training:${{ github.ref_name }}
+
+      - name: Build and push dashboard image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.dashboard
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dashboard:${{ github.ref_name }}
+
+  deploy-kubernetes:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f deployment/kubernetes/manifests.yaml
+          kubectl set image deployment/ray-head ray-head=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-training:${{ github.ref_name }} -n warehouse-rl
+          kubectl set image deployment/dashboard dashboard=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dashboard:${{ github.ref_name }} -n warehouse-rl
+          kubectl rollout status deployment/dashboard -n warehouse-rl --timeout=120s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n warehouse-rl
+          kubectl get services -n warehouse-rl
