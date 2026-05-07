@@ -19,9 +19,17 @@ import sys
 import warnings
 import argparse
 import json
+import tempfile
 from pathlib import Path
 from typing import Optional
 from collections import defaultdict
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_TMP_DIR = PROJECT_ROOT / ".tmp"
+LOCAL_TMP_DIR.mkdir(exist_ok=True)
+os.environ.setdefault("TMP", str(LOCAL_TMP_DIR))
+os.environ.setdefault("TEMP", str(LOCAL_TMP_DIR))
+tempfile.tempdir = str(LOCAL_TMP_DIR)
 
 warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
@@ -31,34 +39,11 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import ray
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.policy.policy import PolicySpec
-
-from src.environment.warehouse_env import WarehouseEnv
-from src.training.callbacks import WarehouseCallbacks
+from src.training.config_utils import build_env_config, load_train_config, load_yaml
 
 # ──────────────────────────────────────────────
 # Config helpers (mirrors train_mappo.py exactly)
 # ──────────────────────────────────────────────
-
-import yaml
-
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-def build_env_config(train_cfg: dict, env_cfg: dict) -> dict:
-    return {
-        "grid_width":    env_cfg["grid"]["width"],
-        "grid_height":   env_cfg["grid"]["height"],
-        "num_robots":    env_cfg["robots"]["num_robots"],
-        "max_steps":     env_cfg["robots"]["max_steps_per_episode"],
-        "local_view_size": env_cfg["robots"]["observation_radius"],
-        "comm_dim":      16,
-        "orders_per_episode": env_cfg["orders"]["max_queue_size"],
-        "order_spawn_rate": env_cfg["orders"]["order_spawn_rate"],
-    }
 
 def is_ippo_checkpoint(checkpoint_path: str) -> bool:
     """Detect IPPO checkpoint by checking for policy_0 folder inside policies/."""
@@ -71,6 +56,11 @@ def is_ippo_checkpoint(checkpoint_path: str) -> bool:
 
 def build_algo(env_config: dict, train_cfg: dict, ippo: bool = False, num_robots: int = 10):
     """Build algo config matching the checkpoint type — IPPO or MAPPO."""
+
+    from ray.rllib.algorithms.ppo import PPOConfig
+    from ray.rllib.policy.policy import PolicySpec
+
+    from src.training.callbacks import WarehouseCallbacks
 
     if ippo:
         # Mirror train_independent.py exactly
@@ -136,6 +126,8 @@ def run_episodes(algo, env_config: dict, num_episodes: int, label: str, ippo: bo
     Run `num_episodes` full rollouts and collect per-episode metrics.
     Returns aggregated stats dict.
     """
+    from src.environment.warehouse_env import WarehouseEnv
+
     env = WarehouseEnv(env_config)
 
     all_rewards       = []
@@ -320,14 +312,17 @@ def main():
     args = parser.parse_args()
 
     # Load configs
-    train_cfg = load_config(args.train_config)["mappo"]
-    env_cfg   = load_config(args.env_config)
-    env_config = build_env_config(train_cfg, env_cfg)
+    train_cfg = load_train_config(args.train_config)
+    env_cfg   = load_yaml(args.env_config)
+    env_config = build_env_config(env_cfg)
 
     # Init Ray
+    import ray
+    from ray import tune
+    from src.environment.warehouse_env import WarehouseEnv
+
     ray.init(ignore_reinit_error=True, num_cpus=2)
 
-    from ray import tune
     tune.register_env("warehouse_eval", lambda cfg: WarehouseEnv(cfg))
 
     all_results = []

@@ -112,6 +112,11 @@ class CurriculumManager:
             cfg = yaml.safe_load(f)
         if "curriculum" in cfg and "stages" in cfg["curriculum"]:
             self.stages = cfg["curriculum"]["stages"]
+            for stage in self.stages:
+                if "order_deadlines" in stage and "use_deadlines" not in stage:
+                    stage["use_deadlines"] = stage["order_deadlines"]
+                if "priority_orders" in stage and "use_priorities" not in stage:
+                    stage["use_priorities"] = stage["priority_orders"]
             self.promotion_threshold = cfg["curriculum"].get(
                 "promotion_threshold", self.promotion_threshold
             )

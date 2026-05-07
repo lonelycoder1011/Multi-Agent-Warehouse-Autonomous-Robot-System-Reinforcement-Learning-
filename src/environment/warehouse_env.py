@@ -5,15 +5,18 @@ RLlib-compatible MultiAgentEnv using Gymnasium spaces.
 
 from __future__ import annotations
 from typing import Dict, Any, Optional, Tuple, List
+import os
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
 # RLlib MultiAgentEnv
 try:
+    if os.environ.get("WAREHOUSE_RL_DISABLE_RAY_ENV") == "1":
+        raise ImportError("Ray environment base disabled")
     from ray.rllib.env.multi_agent_env import MultiAgentEnv
-except ImportError:
-    # Fallback for testing without Ray
+except Exception:
+    # Fallback for dashboard/tests when Ray is unavailable or cannot initialize.
     class MultiAgentEnv:
         pass
 

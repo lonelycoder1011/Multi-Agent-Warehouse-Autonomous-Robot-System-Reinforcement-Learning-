@@ -31,4 +31,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
   CMD python3 -c "import ray; ray.init(address='auto'); print('Ray OK')" || exit 1
 
 EXPOSE 6379 8265 10001
-CMD ["python3", "-m", "training.trainer", "--config", "configs/training_config.yaml"]
+CMD ["python3", "-m", "src.training.train_mappo", "--train-config", "configs/mappo_config.yaml", "--env-config", "configs/env_config.yaml", "--curriculum-config", "configs/curriculum_config.yaml"]

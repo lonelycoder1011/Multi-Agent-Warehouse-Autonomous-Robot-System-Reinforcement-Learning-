@@ -5,46 +5,47 @@ Used for comparison against MAPPO.
 """
 
 from __future__ import annotations
+import os
 import sys
 import argparse
-import yaml
+import tempfile
 from pathlib import Path
 
-import ray
-from ray import tune
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.policy.policy import PolicySpec
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_TMP_DIR = PROJECT_ROOT / ".tmp"
+LOCAL_TMP_DIR.mkdir(exist_ok=True)
+os.environ.setdefault("TMP", str(LOCAL_TMP_DIR))
+os.environ.setdefault("TEMP", str(LOCAL_TMP_DIR))
+tempfile.tempdir = str(LOCAL_TMP_DIR)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.environment.warehouse_env import WarehouseEnv
-from src.training.callbacks import WarehouseCallbacks
+from src.training.config_utils import build_env_config, load_train_config, load_yaml
 
 
 def train_independent(
     train_config_path: str = "configs/mappo_config.yaml",
     env_config_path: str = "configs/env_config.yaml",
     num_iterations: int = 20,
+    num_workers: int = 2,
 ):
-    with open(train_config_path) as f:
-        train_cfg = yaml.safe_load(f)["mappo"]
-    with open(env_config_path) as f:
-        env_cfg = yaml.safe_load(f)
+    import ray
+    from ray import tune
+    from ray.rllib.algorithms.ppo import PPOConfig
+    from ray.rllib.policy.policy import PolicySpec
+
+    from src.environment.warehouse_env import WarehouseEnv
+    from src.training.callbacks import WarehouseCallbacks
+
+    train_cfg = load_train_config(train_config_path)
+    env_cfg = load_yaml(env_config_path)
 
     ray.init(ignore_reinit_error=True)
     tune.register_env("warehouse_env", lambda cfg: WarehouseEnv(cfg))
 
     num_robots = env_cfg["robots"]["num_robots"]
 
-    env_config = {
-        "grid_width": env_cfg["grid"]["width"],
-        "grid_height": env_cfg["grid"]["height"],
-        "num_robots": env_cfg["robots"]["num_robots"],
-        "max_steps": env_cfg["robots"]["max_steps_per_episode"],
-        "local_view_size": env_cfg["robots"]["observation_radius"],
-        "comm_dim": 16,
-        "orders_per_episode": env_cfg["orders"]["max_queue_size"],
-    }
+    env_config = build_env_config(env_cfg)
 
     policies = {
         f"policy_{i}": PolicySpec() for i in range(num_robots)
@@ -58,7 +59,7 @@ def train_independent(
         PPOConfig()
         .environment(env="warehouse_env", env_config=env_config)
         .framework("torch")
-        .rollouts(num_rollout_workers=2, num_envs_per_worker=1)
+        .rollouts(num_rollout_workers=num_workers, num_envs_per_worker=1)
         .training(
             lr=train_cfg.get("lr", 3e-4),
             gamma=0.99,
@@ -100,11 +101,23 @@ def train_independent(
     ray.shutdown()
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train-config", default="configs/mappo_config.yaml")
+    parser.add_argument("--train-config", default=None)
+    parser.add_argument("--config", dest="legacy_config", default=None)
     parser.add_argument("--env-config", default="configs/env_config.yaml")
     parser.add_argument("--iterations", type=int, default=200)
-    args = parser.parse_args()
+    parser.add_argument("--num-workers", type=int, default=2)
+    args = parser.parse_args(argv)
 
-    train_independent(args.train_config, args.env_config, args.iterations)
+    train_config = args.train_config or args.legacy_config or "configs/mappo_config.yaml"
+
+    train_independent(
+        train_config,
+        args.env_config,
+        args.iterations,
+        num_workers=args.num_workers,
+    )
+
+if __name__ == "__main__":
+    main()

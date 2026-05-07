@@ -11,6 +11,7 @@ htmlcov/
 .tmp/
 tmp/
 temp/
+.run/
 
 # Virtual environments
 .venv/

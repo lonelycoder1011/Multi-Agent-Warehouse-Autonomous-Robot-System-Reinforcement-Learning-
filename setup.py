@@ -6,8 +6,9 @@ setup(
     description="Multi-Agent Autonomous Warehouse Reinforcement Learning System",
     author="WarehouseRL Team",
     python_requires=">=3.10",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=find_packages(include=["src", "src.*", "dashboard", "dashboard.*"]),
+    include_package_data=True,
+    package_data={"dashboard": ["index.html", "static/*"]},
     install_requires=[
         "ray[rllib]==2.10.0",
         "gymnasium==0.28.1",
@@ -18,8 +19,9 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "warehouse-train=training.trainer:main",
-            "warehouse-eval=training.evaluate:main",
+            "warehouse-train=src.training.train_mappo:main",
+            "warehouse-train-ippo=src.training.train_independent:main",
+            "warehouse-eval=src.training.evaluate:main",
             "warehouse-dashboard=dashboard.app:main",
         ]
     },

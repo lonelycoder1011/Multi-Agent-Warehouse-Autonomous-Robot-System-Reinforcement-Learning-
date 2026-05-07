@@ -7,9 +7,9 @@ CHECKPOINT=${1:-""}
 EPISODES=${2:-50}
 
 echo "🔬 Running benchmark comparison..."
-python src/training/evaluate.py --benchmark --episodes "$EPISODES"
+python -m src.training.evaluate --benchmark --episodes "$EPISODES"
 
 if [ -n "$CHECKPOINT" ]; then
   echo "📊 Evaluating checkpoint: $CHECKPOINT"
-  python src/training/evaluate.py --checkpoint "$CHECKPOINT" --episodes "$EPISODES"
+  python -m src.training.evaluate --checkpoint "$CHECKPOINT" --episodes "$EPISODES"
 fi

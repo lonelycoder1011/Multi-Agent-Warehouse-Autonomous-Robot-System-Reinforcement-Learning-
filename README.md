@@ -37,6 +37,10 @@ warehouse-rl-final/
 |-- docs/
 |   `-- BUILD_PLAN.md
 |-- scripts/
+|   |-- run_full_system.ps1
+|   |-- run_dashboard.ps1
+|   |-- stop_full_system.ps1
+|   |-- watch_logs.ps1
 |   |-- run_training.sh
 |   |-- train.sh
 |   `-- evaluate.sh
@@ -100,7 +104,19 @@ Training code lives in `src/training/`.
 
 ### Dashboard
 
-`dashboard/app.py` serves a FastAPI app with a WebSocket endpoint. The current dashboard uses a lightweight built-in simulator for visualization, which makes it useful for demos even without running a trained checkpoint.
+`dashboard/app.py` serves a FastAPI app with REST endpoints and a WebSocket stream. By default it runs the real `WarehouseEnv` with a deterministic heuristic policy so the warehouse grid, robots, batteries, orders, and activity log move live in the browser.
+
+Important: opening the dashboard does not start RL training. It is a live environment rollout/visualization. Real training is started separately with the training commands below.
+
+Useful dashboard endpoints:
+
+- `/health` - server health and active stream source.
+- `/api/state` - one current warehouse state tick.
+- `/api/training-status` - whether Ray/checkpoint activity suggests training is active.
+- `/api/training-log` - recent lines from `logs/training.log`.
+- `/api/checkpoints` - saved checkpoint folders under `models/`.
+- `/metrics` - Prometheus-style dashboard metrics.
+- `/ws` - live WebSocket stream consumed by `index.html`.
 
 ## Requirements
 
@@ -138,12 +154,55 @@ pytest tests -v
 
 `test_env.py` checks that the environment imports and resets. `test_env_sanity.py` manually verifies pickup and delivery behavior.
 
+## Run Full System
+
+On Windows PowerShell, start the dashboard and real MAPPO training together:
+
+```powershell
+.\scripts\run_full_system.ps1
+```
+
+This starts two background processes:
+
+- Dashboard: `http://127.0.0.1:8080`
+- Training: `python -m src.training.train_mappo ...`
+
+Runtime files:
+
+```text
+logs/dashboard.log
+logs/training.log
+.run/warehouse-stack.json
+```
+
+Watch logs:
+
+```powershell
+.\scripts\watch_logs.ps1 -Target all
+.\scripts\watch_logs.ps1 -Target training
+.\scripts\watch_logs.ps1 -Target dashboard
+```
+
+Stop both processes:
+
+```powershell
+.\scripts\stop_full_system.ps1
+```
+
+The dashboard activity log polls `/api/training-status` and `/api/training-log`, so it can show whether real training is detected and surface recent training output.
+
 ## Training
 
 Start MAPPO-style shared-policy training:
 
 ```bash
 python -m src.training.train_mappo --train-config configs/mappo_config.yaml --env-config configs/env_config.yaml --curriculum-config configs/curriculum_config.yaml
+```
+
+On Windows PowerShell with the included virtual environment:
+
+```powershell
+.\rl-env\Scripts\python.exe -m src.training.train_mappo --train-config configs/mappo_config.yaml --env-config configs/env_config.yaml --curriculum-config configs/curriculum_config.yaml
 ```
 
 Resume from a checkpoint:
@@ -159,6 +218,30 @@ python -m src.training.train_independent --iterations 200
 ```
 
 Training artifacts are written under `models/` by default. That folder is intentionally ignored by Git because checkpoints can become large.
+
+MAPPO checkpoints are saved according to `checkpoint_freq` in `configs/mappo_config.yaml`, currently under:
+
+```text
+models/mappo/
+```
+
+The independent PPO baseline saves under:
+
+```text
+models/ippo_baseline/
+```
+
+To confirm whether training is running, look for Ray ports/processes and recent checkpoint writes. The dashboard also exposes this check at:
+
+```text
+http://127.0.0.1:8080/api/training-status
+```
+
+When training is started through `run_full_system.ps1`, live output is written to:
+
+```text
+logs/training.log
+```
 
 ## Evaluation
 
@@ -180,20 +263,32 @@ Evaluation output is saved to `eval_results.json`, which is ignored by Git as a 
 
 Start the local dashboard:
 
-```bash
-uvicorn dashboard.app:app --host 0.0.0.0 --port 8080 --reload
+```powershell
+.\scripts\run_dashboard.ps1
+```
+
+Or run it directly:
+
+```powershell
+.\rl-env\Scripts\python.exe -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8080 --reload
 ```
 
 Then open:
 
 ```text
-http://localhost:8080
+http://127.0.0.1:8080
 ```
 
 Health check:
 
 ```text
-http://localhost:8080/health
+http://127.0.0.1:8080/health
+```
+
+Training status:
+
+```text
+http://127.0.0.1:8080/api/training-status
 ```
 
 ## Deployment Assets

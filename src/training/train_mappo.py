@@ -9,51 +9,25 @@ import os
 import sys
 import warnings
 import argparse
-import yaml
+import tempfile
 from pathlib import Path
+from typing import Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_TMP_DIR = PROJECT_ROOT / ".tmp"
+LOCAL_TMP_DIR.mkdir(exist_ok=True)
+os.environ.setdefault("TMP", str(LOCAL_TMP_DIR))
+os.environ.setdefault("TEMP", str(LOCAL_TMP_DIR))
+tempfile.tempdir = str(LOCAL_TMP_DIR)
 
 # Suppress all deprecation warnings
 warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 
-import ray
-from ray import tune
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.policy.policy import PolicySpec
-from ray.rllib.utils.framework import try_import_torch
-
-torch, _ = try_import_torch()
-
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.environment.warehouse_env import WarehouseEnv
-from src.training.callbacks import WarehouseCallbacks
-from src.curriculum.curriculum_manager import CurriculumManager
-
-# W&B setup
-try:
-    import wandb
-    HAS_WANDB = True
-except ImportError:
-    HAS_WANDB = False
-
-
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
-def build_env_config(train_cfg: dict, env_cfg: dict) -> dict:
-    return {
-        "grid_width": env_cfg["grid"]["width"],
-        "grid_height": env_cfg["grid"]["height"],
-        "num_robots": env_cfg["robots"]["num_robots"],
-        "max_steps": env_cfg["robots"]["max_steps_per_episode"],
-        "local_view_size": env_cfg["robots"]["observation_radius"],
-        "comm_dim": 16,
-        "orders_per_episode": env_cfg["orders"]["max_queue_size"],
-    }
+from src.training.config_utils import build_env_config, load_train_config, load_yaml
 
 
 def get_policy_config(env_cfg: dict) -> dict:
@@ -73,10 +47,27 @@ def train(
     curriculum_config_path: str = "configs/curriculum_config.yaml",
     resume: bool = False,
     checkpoint_path: str = None,
+    overrides: Optional[dict] = None,
 ):
     """Main training entry point."""
-    train_cfg = load_config(train_config_path)["mappo"]
-    env_cfg = load_config(env_config_path)
+    import ray
+    from ray import tune
+    from ray.rllib.algorithms.ppo import PPOConfig
+    from ray.rllib.policy.policy import PolicySpec
+
+    from src.curriculum.curriculum_manager import CurriculumManager
+    from src.environment.warehouse_env import WarehouseEnv
+    from src.training.callbacks import WarehouseCallbacks
+
+    try:
+        import wandb
+    except ImportError:
+        wandb = None
+
+    train_cfg = load_train_config(train_config_path)
+    if overrides:
+        train_cfg.update({k: v for k, v in overrides.items() if v is not None})
+    env_cfg = load_yaml(env_config_path)
     num_robots = env_cfg["robots"]["num_robots"]
 
     # Initialize Ray
@@ -90,7 +81,7 @@ def train(
     )
 
     # W&B initialization
-    if HAS_WANDB:
+    if wandb is not None:
         wandb.init(
             project="warehouse-rl",
             name="mappo-warehouse",
@@ -99,7 +90,7 @@ def train(
         print("[W&B] Logging enabled")
 
     # Build env config
-    env_config = build_env_config(train_cfg, env_cfg)
+    env_config = build_env_config(env_cfg)
 
     # Curriculum manager
     curriculum = CurriculumManager(
@@ -194,7 +185,7 @@ def train(
                 print(f"  Curriculum Promotion! -> Stage {curriculum.stage_number}")
 
         # W&B logging
-        if HAS_WANDB and wandb.run:
+        if wandb is not None and wandb.run:
             wandb.log({
                 "iteration": iteration,
                 "reward_mean": mean_reward,
@@ -230,7 +221,7 @@ def train(
     print(f"   Best throughput: {best_throughput:.3f}")
     print(f"   Curriculum stages reached: {curriculum.stage_number}/5")
 
-    if HAS_WANDB and wandb.run:
+    if wandb is not None and wandb.run:
         wandb.finish()
 
     algo.stop()
@@ -239,19 +230,34 @@ def train(
     return final_path
 
 
-if __name__ == "__main__":
+def main(argv: Optional[list[str]] = None):
     parser = argparse.ArgumentParser(description="Train MAPPO Warehouse Agent")
-    parser.add_argument("--train-config", default="configs/mappo_config.yaml")
+    parser.add_argument("--train-config", default=None)
+    parser.add_argument("--config", dest="legacy_config", default=None)
     parser.add_argument("--env-config", default="configs/env_config.yaml")
     parser.add_argument("--curriculum-config", default="configs/curriculum_config.yaml")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint", type=str, default=None)
-    args = parser.parse_args()
+    parser.add_argument("--num-workers", type=int, default=None)
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Accepted for script compatibility; W&B auto-enables when configured.",
+    )
+    args = parser.parse_args(argv)
 
-    train(
-        train_config_path=args.train_config,
+    train_config = args.train_config or args.legacy_config or "configs/mappo_config.yaml"
+    overrides = {"num_rollout_workers": args.num_workers}
+
+    return train(
+        train_config_path=train_config,
         env_config_path=args.env_config,
         curriculum_config_path=args.curriculum_config,
         resume=args.resume,
         checkpoint_path=args.checkpoint,
+        overrides=overrides,
     )
+
+
+if __name__ == "__main__":
+    main()

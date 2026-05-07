@@ -10,8 +10,10 @@ export PYTHONPATH="$(pwd)/src:$PYTHONPATH"
 
 # Parse args
 ALGORITHM=${1:-"mappo"}
-CONFIG=${2:-"configs/training_config.yaml"}
+CONFIG=${2:-"configs/mappo_config.yaml"}
 WORKERS=${3:-4}
+ENV_CONFIG="${ENV_CONFIG:-configs/env_config.yaml}"
+CURRICULUM_CONFIG="${CURRICULUM_CONFIG:-configs/curriculum_config.yaml}"
 
 echo "Algorithm : $ALGORITHM"
 echo "Config    : $CONFIG"
@@ -20,14 +22,16 @@ echo ""
 
 case "$ALGORITHM" in
   mappo)
-    python -m training.train_mappo \
-      --config "$CONFIG" \
-      --num-workers "$WORKERS" \
-      --wandb
+    python -m src.training.train_mappo \
+      --train-config "$CONFIG" \
+      --env-config "$ENV_CONFIG" \
+      --curriculum-config "$CURRICULUM_CONFIG" \
+      --num-workers "$WORKERS"
     ;;
   independent)
-    python -m training.train_independent \
-      --config "$CONFIG" \
+    python -m src.training.train_independent \
+      --train-config "$CONFIG" \
+      --env-config "$ENV_CONFIG" \
       --num-workers "$WORKERS"
     ;;
   *)

@@ -429,6 +429,7 @@ canvas.mini-chart {
 .log-entry.delivery { border-left-color:var(--green); color:var(--green); }
 .log-entry.collision { border-left-color:var(--red); color:var(--red); }
 .log-entry.charge { border-left-color:var(--violet2); color:var(--violet2); }
+.log-entry.training { border-left-color:var(--cyan); color:var(--cyan); }
 @keyframes fadeIn { from { opacity:0; transform:translateX(-4px); } to { opacity:1; transform:none; } }
 
 /* ── Floating particles ── */
@@ -614,6 +615,8 @@ let heatmap = Array.from({length:GRID_H}, () => new Float32Array(GRID_W));
 let robotTrails = {};
 let lastDelivered = 0;
 let logEntries = [];
+let lastTrainingActive = null;
+let seenTrainingLines = new Set();
 
 // ── Canvas Setup ──────────────────────────────────────────────────────────
 const canvas = document.getElementById('warehouseCanvas');
@@ -862,11 +865,13 @@ function updateRobotList(robots) {
 // ── Activity Log ──────────────────────────────────────────────────────────
 function addLog(msg, type='') {
   const el = document.getElementById('activity-log');
+  if (!el) return;
   const entry = document.createElement('div');
-  entry.className = `log-entry ${type}`;
-  entry.textContent = msg;
+  entry.className = `log-entry ${type || ''}`;
+  const stamp = new Date().toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  entry.textContent = `[${stamp}] ${msg}`;
   el.insertBefore(entry, el.firstChild);
-  while (el.children.length > 12) el.removeChild(el.lastChild);
+  while (el.children.length > 18) el.removeChild(el.lastChild);
 }
 
 // ── Trail Tracking ────────────────────────────────────────────────────────
@@ -893,7 +898,7 @@ function onState(data) {
   const delta = newDelivered - lastDelivered;
   if (delta > 0) {
     document.getElementById('m-delivered-d').textContent = `+${delta}`;
-    addLog(`✓ Robot delivered order #${newDelivered} at step ${step}`, 'delivery');
+    addLog(`Robot delivered order #${newDelivered} at step ${step}`, 'delivery');
     lastDelivered = newDelivered;
   }
   document.getElementById('m-delivered').textContent = newDelivered;
@@ -920,8 +925,9 @@ function onState(data) {
   if (step % 20 === 0) {
     const charging = robots.filter(r=>r.state==='CHARGING');
     if (charging.length > 0) {
-      addLog(`⚡ ${charging.length} robot(s) charging at step ${step}`, 'charge');
+      addLog(`${charging.length} robot(s) charging at step ${step}`, 'charge');
     }
+    addLog(`Live rollout step ${step}: ${metrics.orders_completed} orders completed`, '');
   }
 }
 
@@ -929,11 +935,47 @@ function onState(data) {
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => addLog('WebSocket connected - streaming WarehouseEnv state', 'delivery');
   ws.onmessage = e => {
     try { onState(JSON.parse(e.data)); } catch(err) { console.error(err); }
   };
-  ws.onclose = () => setTimeout(connect, 2000);
-  ws.onerror = () => ws.close();
+  ws.onclose = () => {
+    addLog('WebSocket closed - reconnecting in 2 seconds', 'charge');
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => {
+    addLog('WebSocket error - reconnect requested', 'collision');
+    ws.close();
+  };
+}
+
+async function checkTrainingStatus() {
+  try {
+    const res = await fetch('/api/training-status', { cache: 'no-store' });
+    const status = await res.json();
+    if (status.training_active !== lastTrainingActive) {
+      if (status.training_active) {
+        addLog('Training backend detected - real MAPPO training is running', 'training');
+      } else {
+        addLog('Training backend not detected - dashboard rollout is still live', 'charge');
+      }
+      lastTrainingActive = status.training_active;
+    }
+    if (status.latest_checkpoint_file && status.latest_checkpoint_file.path) {
+      addLog(`Latest saved checkpoint file: ${status.latest_checkpoint_file.path}`, '');
+    }
+    const logRes = await fetch('/api/training-log?lines=12', { cache: 'no-store' });
+    const logData = await logRes.json();
+    for (const raw of logData.lines || []) {
+      const line = raw.trim();
+      if (!line || seenTrainingLines.has(line)) continue;
+      seenTrainingLines.add(line);
+      if (seenTrainingLines.size > 120) seenTrainingLines = new Set(Array.from(seenTrainingLines).slice(-80));
+      addLog(`train: ${line.slice(0, 110)}`, 'training');
+    }
+  } catch (err) {
+    addLog('Training status unavailable', 'collision');
+  }
 }
 
 // ── Toggles ───────────────────────────────────────────────────────────────
@@ -969,8 +1011,10 @@ function spawnParticles() {
 // ── Init ──────────────────────────────────────────────────────────────────
 renderAlgoBars();
 spawnParticles();
-addLog('🏭 System initialized — MAPPO agents online', '');
-addLog('📡 WebSocket connection establishing...', '');
+addLog('System initialized - dashboard loaded', '');
+addLog('Connecting to WarehouseEnv stream...', '');
+checkTrainingStatus();
+setInterval(checkTrainingStatus, 10000);
 connect();
 </script>
 </body>

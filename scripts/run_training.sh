@@ -21,9 +21,19 @@ echo "Curriculum   : $CURRICULUM_CONFIG"
 echo ""
 
 # Launch training
-python src/training/train_mappo.py \
-  --train-config "$TRAIN_CONFIG" \
-  --env-config "$ENV_CONFIG" \
-  --curriculum-config "$CURRICULUM_CONFIG" \
-  ${RESUME:+--resume} \
-  ${CHECKPOINT:+--checkpoint "$CHECKPOINT"}
+ARGS=(
+  -m src.training.train_mappo
+  --train-config "$TRAIN_CONFIG"
+  --env-config "$ENV_CONFIG"
+  --curriculum-config "$CURRICULUM_CONFIG"
+)
+
+if [ "$RESUME" = "true" ]; then
+  ARGS+=(--resume)
+fi
+
+if [ -n "$CHECKPOINT" ]; then
+  ARGS+=(--checkpoint "$CHECKPOINT")
+fi
+
+python "${ARGS[@]}"
